@@ -18,7 +18,7 @@ API_KEY = os.getenv("OPENROUTER_API_KEY")
 SERPER_KEY = os.getenv("SERPER_API_KEY")
 
 if not API_KEY:
-    raise ValueError("Missing OPENROUTER_API_KEY")
+raise ValueError("Missing OPENROUTER_API_KEY")
 
 # 🚀 APP
 
@@ -142,7 +142,7 @@ headers = {
 
 data = {
     "model": "nvidia/nemotron-3-super-120b-a12b:free",
-    "messages":[
+    "messages": [
         {"role": "system", "content": system_prompt.strip()},
         {"role": "user", "content": user_input.strip()}
     ],
@@ -182,7 +182,7 @@ if not req.message.strip():
 
 db = SessionLocal()
 
-# ✅ FIX: auto-create user
+# ✅ auto-create user
 user = db.query(User).filter(User.id == 1).first()
 if not user:
     user = User(id=1, name="User")
