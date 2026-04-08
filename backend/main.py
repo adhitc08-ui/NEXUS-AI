@@ -39,14 +39,11 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
-
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=True)
 
-
 class Chat(Base):
     __tablename__ = "chats"
-
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     user_message = Column(Text)
@@ -61,12 +58,7 @@ user_profiles = {}
 
 def extract_user_info(user_id, message):
     msg = message.lower()
-
-    patterns = [
-        r"my name is (\w+)",
-        r"i am (\w+)",
-        r"i'm (\w+)"
-    ]
+    patterns = [r"my name is (\w+)", r"i am (\w+)", r"i'm (\w+)"]
 
     for pattern in patterns:
         match = re.search(pattern, msg)
@@ -74,34 +66,23 @@ def extract_user_info(user_id, message):
             name = match.group(1).capitalize()
             user_profiles[user_id] = {"name": name}
 
-
 def build_memory_context(user_id):
     profile = user_profiles.get(user_id, {})
     context = ""
-
     if "name" in profile:
         context += f"The user's name is {profile['name']}.\n"
-
     return context
-
 
 def build_chat_context(db, user_id):
     chats = db.query(Chat).filter(Chat.user_id == user_id).order_by(Chat.id.desc()).limit(5).all()
-
     context = ""
     for chat in reversed(chats):
         context += f"User: {chat.user_message}\nAI: {chat.ai_response}\n"
-
     return context
-
 
 def search_web(query):
     url = "https://google.serper.dev/search"
-
-    payload = {
-        "q": query,
-        "num": 5
-    }
+    payload = {"q": query, "num": 5}
 
     headers = {
         "X-API-KEY": SERPER_KEY,
@@ -109,18 +90,16 @@ def search_web(query):
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=3)
+        response = requests.post(url, json=payload, headers=headers, timeout=5)
         data = response.json()
 
         articles = []
-
-        if "organic" in data:
-            for item in data["organic"][:5]:
-                articles.append({
-                    "title": item.get("title", ""),
-                    "snippet": item.get("snippet", ""),
-                    "link": item.get("link", "")
-                })
+        for item in data.get("organic", [])[:5]:
+            articles.append({
+                "title": item.get("title", ""),
+                "snippet": item.get("snippet", ""),
+                "link": item.get("link", "")
+            })
 
         return articles
 
@@ -128,10 +107,10 @@ def search_web(query):
         print("SERPER ERROR:", str(e))
         return []
 
-
+# 🔥 FIXED AI FUNCTION
 async def get_ai_response(user_input, memory_context, chat_context):
     url = "https://openrouter.ai/api/v1/chat/completions"
-    print("API KEY LOADED:", bool(API_KEY))
+
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -139,10 +118,7 @@ async def get_ai_response(user_input, memory_context, chat_context):
 
     system_prompt = f"""
 You are Nexus AI.
-
-Rules:
-- Be clear, concise, and helpful
-- Use memory and conversation context
+Be smart, natural, and helpful.
 
 Memory:
 {memory_context}
@@ -152,36 +128,44 @@ Conversation:
 """
 
     data = {
-        "model": "nvidia/nemotron-3-nano-30b-a3b:free",
+        # ✅ SAFE MODEL (WORKS 100%)
+        "model": "meta-llama/llama-3-8b-instruct",
+
+        # 👉 If you REALLY want NVIDIA, replace above with:
+        # "model": "nvidia/nemotron-4-340b-instruct"
+
         "messages": [
             {"role": "system", "content": system_prompt.strip()},
             {"role": "user", "content": user_input.strip()}
         ],
-        "temperature": 0.6,
+        "temperature": 0.7,
         "max_tokens": 300
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.post(url, headers=headers, json=data)
+
+        # 🔥 CRITICAL DEBUG
+        if response.status_code != 200:
+            print("OPENROUTER ERROR:", response.text)
+            return "AI service error. Check logs."
 
         result = response.json()
 
-        if "choices" in result and len(result["choices"]) > 0:
+        if "choices" in result:
             return result["choices"][0]["message"]["content"]
-        else:
-            print("OPENROUTER ERROR:", result)
-            return "AI failed to respond. Try again."
+
+        print("BAD RESPONSE:", result)
+        return "AI failed to respond."
 
     except Exception as e:
         print("AI ERROR:", str(e))
         return "Server busy. Try again."
 
-
 @app.get("/")
 def home():
     return {"message": "Nexus AI backend is running 🚀"}
-
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
@@ -203,10 +187,7 @@ async def chat(req: ChatRequest):
     memory_context = build_memory_context(user_id)
     chat_context = build_chat_context(db, user_id)
 
-    trigger_words = [
-        "news", "latest", "today", "current",
-        "stock", "market", "economy", "trend"
-    ]
+    trigger_words = ["news", "latest", "today", "current", "stock", "market"]
 
     if any(word in req.message.lower() for word in trigger_words):
         articles = search_web(req.message)
@@ -215,7 +196,7 @@ async def chat(req: ChatRequest):
         if articles:
             return {"type": "news", "articles": articles}
         else:
-            return {"type": "text", "response": "Couldn't fetch news right now."}
+            return {"type": "text", "response": "Couldn't fetch news."}
 
     reply = await get_ai_response(req.message, memory_context, chat_context)
 
@@ -225,13 +206,8 @@ async def chat(req: ChatRequest):
         ai_response=reply
     )
 
-    response_data = {
-        "type": "text",
-        "response": reply
-    }
-
     db.add(chat_entry)
     db.commit()
     db.close()
 
-    return response_data
+    return {"type": "text", "response": reply}
