@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+import os
+load_dotenv()
 from fastapi import FastAPI
 from pydantic import BaseModel
 import httpx
@@ -16,8 +19,6 @@ SERPER_KEY = os.getenv("SERPER_API_KEY")
 if not API_KEY:
     raise ValueError("Missing OPENROUTER_API_KEY")
 
-if not SERPER_KEY:
-    raise ValueError("Missing SERPER_API_KEY")
 
 # 🚀 APP
 app = FastAPI()
@@ -126,13 +127,13 @@ Conversation:
     }
 
     data = {
-        "model": "mistralai/mistral-7b-instruct",  # 🔥 stable model
-        "messages": [
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "messages":[
             {"role": "system", "content": system_prompt.strip()},
             {"role": "user", "content": user_input.strip()}
         ],
         "temperature": 0.7,
-        "max_tokens": 300
+        "max_tokens": 250
     }
 
     try:
@@ -178,7 +179,11 @@ async def chat(req: ChatRequest):
     memory_context = build_memory_context(user_id)
     chat_context = build_chat_context(db, user_id)
 
-    trigger_words = ["news", "latest", "today", "current", "stock", "market"]
+    trigger_words = [
+    "news", "latest", "today", "current",
+    "stock", "market",
+    "recent", "update", "developments", "trends"
+]
 
     if any(word in req.message.lower() for word in trigger_words):
         articles = search_web(req.message)

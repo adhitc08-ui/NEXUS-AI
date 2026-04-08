@@ -941,9 +941,7 @@
 </div>
 
 <script>
-  const API_URL = window.location.hostname === "localhost"
-  ? "http://127.0.0.1:8000/chat"
-  : "https://nexus-ai-backend.onrender.com/chat";
+  const API_URL = "http://127.0.0.1:8000/chat";
 
   // ── Sidebar toggle ──────────────────────────────────────────
   function toggleCat(header) {
@@ -1193,39 +1191,68 @@
 
   // ── Send message ────────────────────────────────────────────
   async function sendMessage() {
-    if (isTyping) return;
-    const input = document.getElementById('chatInput');
-    const text = input.value.trim();
-    if (!text) return;
+  if (isTyping) return;
 
-    input.value = '';
-    input.style.height = 'auto';
-    addMessage(text, 'user');
-    isTyping = true;
-    showTyping();
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
 
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text })
-      });
-      const data = await res.json();
-      removeTyping();
+  input.value = '';
+  input.style.height = 'auto';
 
-      if (data.type === 'news') {
-        renderNewsCards(data.articles);
-      } else {
-        addMessage(data.response || 'No response received.', 'ai');
+  addMessage(text, 'user');
+  isTyping = true;
+  showTyping();
+
+  try {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ message: text })
+    });
+
+    const data = await res.json();
+    removeTyping();
+
+    // 🔥 HANDLE API ERRORS CLEANLY
+    if (!res.ok) {
+      console.error("Backend error:", data);
+
+      let msg = "Something went wrong.";
+
+      if (data?.error?.message) {
+        msg = data.error.message;
+      } else if (data?.detail) {
+        msg = data.detail;
       }
-    } catch (err) {
-      removeTyping();
-      addMessage('⚠️ Could not reach the backend. Make sure it is running on port 8000.', 'ai');
+
+      addMessage(`⚠️ ${msg}`, 'ai');
+      return;
     }
 
-    isTyping = false;
+    // 🔥 HANDLE RESPONSE TYPES
+    if (data.type === 'news') {
+      renderNewsCards(data.articles);
+    } else if (data.response) {
+      addMessage(data.response, 'ai');
+    } else {
+      addMessage("⚠️ Empty response from AI.", 'ai');
+    }
+
+  } catch (err) {
+    removeTyping();
+    console.error("Fetch error:", err);
+
+    addMessage(
+      "⚠️ Backend not reachable.\nMake sure server is running on port 8000.",
+      'ai'
+    );
   }
 
+  isTyping = false;
+}
   // ── Clear / New chat ────────────────────────────────────────
   function clearChat() {
     document.getElementById('chatMessages').innerHTML = `
