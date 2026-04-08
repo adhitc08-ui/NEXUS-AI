@@ -941,7 +941,10 @@
 </div>
 
 <script>
-  const API_URL = "http://127.0.0.1:8000/chat";
+  const API_URL =
+  window.location.hostname === "localhost"
+    ? "http://127.0.0.1:8000/chat"
+    : "https://your-render-url.onrender.com/chat";
 
   // ── Sidebar toggle ──────────────────────────────────────────
   function toggleCat(header) {
