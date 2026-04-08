@@ -3,24 +3,23 @@ from pydantic import BaseModel
 import httpx
 import os
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 import re
 import requests
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-load_dotenv()
-
+# 🔥 ENV
 API_KEY = os.getenv("OPENROUTER_API_KEY")
 SERPER_KEY = os.getenv("SERPER_API_KEY")
 
 if not API_KEY:
-    raise ValueError("Missing OPENROUTER_API_KEY in environment")
+    raise ValueError("Missing OPENROUTER_API_KEY")
 
 if not SERPER_KEY:
-    raise ValueError("Missing SERPER_API_KEY in environment")
+    raise ValueError("Missing SERPER_API_KEY")
 
+# 🚀 APP
 app = FastAPI()
 
 app.add_middleware(
@@ -31,6 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 🧠 DB
 DATABASE_URL = "sqlite:///./nexus.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -39,23 +39,25 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
 
 class Chat(Base):
     __tablename__ = "chats"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer)
     user_message = Column(Text)
     ai_response = Column(Text)
 
 Base.metadata.create_all(bind=engine)
 
+# 📥 REQUEST
 class ChatRequest(BaseModel):
     message: str
 
 user_profiles = {}
 
+# 🧠 MEMORY
 def extract_user_info(user_id, message):
     msg = message.lower()
     patterns = [r"my name is (\w+)", r"i am (\w+)", r"i'm (\w+)"]
@@ -63,15 +65,13 @@ def extract_user_info(user_id, message):
     for pattern in patterns:
         match = re.search(pattern, msg)
         if match:
-            name = match.group(1).capitalize()
-            user_profiles[user_id] = {"name": name}
+            user_profiles[user_id] = {"name": match.group(1).capitalize()}
 
 def build_memory_context(user_id):
     profile = user_profiles.get(user_id, {})
-    context = ""
     if "name" in profile:
-        context += f"The user's name is {profile['name']}.\n"
-    return context
+        return f"The user's name is {profile['name']}.\n"
+    return ""
 
 def build_chat_context(db, user_id):
     chats = db.query(Chat).filter(Chat.user_id == user_id).order_by(Chat.id.desc()).limit(5).all()
@@ -80,9 +80,9 @@ def build_chat_context(db, user_id):
         context += f"User: {chat.user_message}\nAI: {chat.ai_response}\n"
     return context
 
+# 🌐 SEARCH
 def search_web(query):
     url = "https://google.serper.dev/search"
-    payload = {"q": query, "num": 5}
 
     headers = {
         "X-API-KEY": SERPER_KEY,
@@ -90,31 +90,24 @@ def search_web(query):
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=5)
+        response = requests.post(url, json={"q": query}, headers=headers)
         data = response.json()
 
-        articles = []
-        for item in data.get("organic", [])[:5]:
-            articles.append({
-                "title": item.get("title", ""),
-                "snippet": item.get("snippet", ""),
-                "link": item.get("link", "")
-            })
-
-        return articles
-
+        return [
+            {
+                "title": item.get("title"),
+                "snippet": item.get("snippet"),
+                "link": item.get("link")
+            }
+            for item in data.get("organic", [])[:5]
+        ]
     except Exception as e:
-        print("SERPER ERROR:", str(e))
+        print("SERPER ERROR:", e)
         return []
 
-# 🔥 FIXED AI FUNCTION
+# 🔥 FINAL FIXED AI FUNCTION
 async def get_ai_response(user_input, memory_context, chat_context):
     url = "https://openrouter.ai/api/v1/chat/completions"
-
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
 
     system_prompt = f"""
 You are Nexus AI.
@@ -127,13 +120,13 @@ Conversation:
 {chat_context}
 """
 
+    headers = {
+        "Authorization": f"Bearer {API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     data = {
-        # ✅ SAFE MODEL (WORKS 100%)
-        "model": "meta-llama/llama-3-8b-instruct",
-
-        # 👉 If you REALLY want NVIDIA, replace above with:
-        # "model": "nvidia/nemotron-4-340b-instruct"
-
+        "model": "mistralai/mistral-7b-instruct",  # 🔥 stable model
         "messages": [
             {"role": "system", "content": system_prompt.strip()},
             {"role": "user", "content": user_input.strip()}
@@ -143,30 +136,28 @@ Conversation:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, headers=headers, json=data)
 
-        # 🔥 CRITICAL DEBUG
+        print("STATUS:", response.status_code)
+        print("RAW:", response.text)
+
         if response.status_code != 200:
-            print("OPENROUTER ERROR:", response.text)
-            return "AI service error. Check logs."
+            return "AI error: " + response.text
 
         result = response.json()
-
-        if "choices" in result:
-            return result["choices"][0]["message"]["content"]
-
-        print("BAD RESPONSE:", result)
-        return "AI failed to respond."
+        return result["choices"][0]["message"]["content"]
 
     except Exception as e:
-        print("AI ERROR:", str(e))
-        return "Server busy. Try again."
+        print("AI ERROR:", e)
+        return "AI service error. Check logs."
 
+# 🏠 ROOT
 @app.get("/")
 def home():
     return {"message": "Nexus AI backend is running 🚀"}
 
+# 💬 CHAT
 @app.post("/chat")
 async def chat(req: ChatRequest):
 
@@ -195,18 +186,11 @@ async def chat(req: ChatRequest):
 
         if articles:
             return {"type": "news", "articles": articles}
-        else:
-            return {"type": "text", "response": "Couldn't fetch news."}
+        return {"type": "text", "response": "Couldn't fetch news."}
 
     reply = await get_ai_response(req.message, memory_context, chat_context)
 
-    chat_entry = Chat(
-        user_id=user_id,
-        user_message=req.message,
-        ai_response=reply
-    )
-
-    db.add(chat_entry)
+    db.add(Chat(user_id=user_id, user_message=req.message, ai_response=reply))
     db.commit()
     db.close()
 
