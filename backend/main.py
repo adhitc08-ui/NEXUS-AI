@@ -18,7 +18,7 @@ API_KEY = os.getenv("OPENROUTER_API_KEY")
 SERPER_KEY = os.getenv("SERPER_API_KEY")
 
 if not API_KEY:
-raise ValueError("Missing OPENROUTER_API_KEY")
+    raise ValueError("Missing OPENROUTER_API_KEY")
 
 # 🚀 APP
 
