@@ -12,14 +12,13 @@ import requests
 from sqlalchemy import create_engine, Column, Integer, String, Text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 🔥 ENV
+
 API_KEY = os.getenv("OPENROUTER_API_KEY")
 SERPER_KEY = os.getenv("SERPER_API_KEY")
 
 if not API_KEY:
     raise ValueError("Missing OPENROUTER_API_KEY")
 
-# 🚀 APP
 app = FastAPI()
 
 app.add_middleware(
@@ -30,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🧠 DB
+
 DATABASE_URL = "sqlite:///./nexus.db"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
@@ -51,13 +50,13 @@ class Chat(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# 📥 REQUEST
 class ChatRequest(BaseModel):
     message: str
 
 user_profiles = {}
 
-# 🧠 MEMORY
+
+
 def extract_user_info(user_id, message):
     msg = message.lower()
     patterns = [r"my name is (\w+)", r"i am (\w+)", r"i'm (\w+)"]
@@ -80,7 +79,6 @@ def build_chat_context(db, user_id):
         context += f"User: {chat.user_message}\nAI: {chat.ai_response}\n"
     return context
 
-# 🌐 SEARCH
 def search_web(query):
     url = "https://google.serper.dev/search"
 
@@ -105,7 +103,6 @@ def search_web(query):
         print("SERPER ERROR:", e)
         return []
 
-# 🤖 AI
 async def get_ai_response(user_input, memory_context, chat_context):
     url = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -149,12 +146,13 @@ Conversation:
         print("AI ERROR:", e)
         return "AI service error."
 
-# 🏠 ROOT
+
+
 @app.get("/")
 def home():
     return {"message": "Nexus AI backend is running 🚀"}
 
-# 💬 CHAT
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
 
@@ -163,7 +161,6 @@ async def chat(req: ChatRequest):
 
     db = SessionLocal()
 
-    # ✅ auto-create user
     user = db.query(User).filter(User.id == 1).first()
     if not user:
         user = User(id=1, name="User")
@@ -172,12 +169,11 @@ async def chat(req: ChatRequest):
 
     user_id = user.id
 
-    # memory
+
     extract_user_info(user_id, req.message)
     memory_context = build_memory_context(user_id)
     chat_context = build_chat_context(db, user_id)
 
-    # 🔥 trigger words
     trigger_words = [
         "news", "latest", "today", "current",
         "stock", "market",
@@ -192,7 +188,6 @@ async def chat(req: ChatRequest):
             return {"type": "news", "articles": articles}
         return {"type": "text", "response": "Couldn't fetch news."}
 
-    # AI response
     reply = await get_ai_response(req.message, memory_context, chat_context)
 
     db.add(Chat(user_id=user_id, user_message=req.message, ai_response=reply))
